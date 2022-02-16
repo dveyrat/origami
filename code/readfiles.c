@@ -17,7 +17,8 @@
 int posread(char *posfile, float ***p, float fact, int nps, int npd, int ndiv, int divid, int nbuf) {
 
   FILE *pos;
-  int np,dum,d,i,j,np2,np3, a,b,c,x,y,z;
+  int np,dum,d,i,j,k,l,np2,np3, x,y,z, x2,y2,z2, id;
+
   float xmin,xmax,ymin,ymax,zmin,zmax;
   float *ptemp;
 
@@ -45,96 +46,128 @@ int posread(char *posfile, float ***p, float fact, int nps, int npd, int ndiv, i
 
   printf("np = %d\n",np);
 
+  /*
   j = 0;
+  for (i=0; i<np; i++) {
+    x = (i%nps)-nps-(npd*(divid%ndiv));
+    y = ((i/nps)%nps)-nps-(npd*((divid/ndiv)%ndiv));
+    z = (i/(nps*nps))-nps-(npd*(divid/(ndiv*ndiv)));
+    for (k=0; k<3; k++) {
+      z2 = z+(nps*k)+nbuf;
+      if (z2<0 || z2>=np2) {
+        continue;
+      }
+      for (l=0; l<3; l++) {
+	y2 = y+(nps*l)+nbuf;
+	if (y2<0 || y2>=np2) {
+	  continue;
+	}
+        for (m=0; m<3; m++) {
+          x2 = x+(nps*m)+nbuf;
+	  if (x2<0 || x2>=np2) {
+	    continue;
+	  }
+	  id = (np2*np2*z2)+(np2*y2)+x2;
+	  ++j;
+        }
+      }
+    }
+  }
+  */
+
   fread(ptemp,np,4,pos);
   for (i=0; i<np; i++) {
-    if (((i/(nps*nps))+nbuf)%nps >= np2+(npd*(divid/(ndiv*ndiv)))) {
-      continue;
+    x = (i%nps)-nps-(npd*(divid%ndiv));
+    y = ((i/nps)%nps)-nps-(npd*((divid/ndiv)%ndiv));
+    z = (i/(nps*nps))-nps-(npd*(divid/(ndiv*ndiv)));
+    for (j=0; j<3; j++) {
+      z2 = z+(nps*j)+nbuf;
+      if (z2<0 || z2>=np2) {
+        continue;
+      }
+      for (k=0; k<3; k++) {
+        y2 = y+(nps*k)+nbuf;
+        if (y2<0 || y2>=np2) {
+          continue;
+        }
+        for (l=0; l<3; l++) {
+          x2 = x+(nps*l)+nbuf;
+          if (x2<0 || x2>=np2) {
+            continue;
+          }
+          id = (np2*np2*z2)+(np2*y2)+x2;
+          (*p)[id] = (float *)malloc(3*sizeof(float));
+          if ((*p)[id] == NULL) {
+            printf("Unable to allocate particle array in readfiles!\n");
+            fflush(stdout);
+            exit(0);
+          }
+          (*p)[id][0] = ptemp[i];
+        }
+      }
     }
-    if ((((i/nps)%nps)+nbuf)%nps >= np2+(npd*((divid/ndiv)%ndiv))) {
-      continue;
-    }
-    if (((i%nps)+nbuf)%nps >= np2+(npd*(divid%ndiv))) {
-      continue;
-    }
-    if (((i/(nps*nps))+nbuf)%nps < npd*(divid/(ndiv*ndiv))) {
-      continue;
-    }
-    if ((((i/nps)%nps)+nbuf)%nps < npd*((divid/ndiv)%ndiv)) {
-      continue;
-    }
-    if (((i%nps)+nbuf)%nps < npd*(divid%ndiv)) {
-      continue;
-    }
-    (*p)[j] = (float *)malloc(3*sizeof(float));
-    if ((*p)[j] == NULL) {
-      printf("Unable to allocate particle array in readfiles!\n");
-      fflush(stdout);
-      exit(0);
-    }
-    (*p)[j][0] = ptemp[i];
-    ++j;
   }
+
   /*fread(&dum,1,4,pos); 
     fread(&dum,1,4,pos); */
-  j = 0;
+
   fread(ptemp,np,4,pos);
   for (i=0; i<np; i++) {
-    a = ;
-    b = ;
-    c = ;
-    a = ;
-    b = ;
-    x = i%nps;
-    y = (i/nps)%nps;
-    z = i/(nps*nps);
-    if (((i/(nps*nps))+nbuf)%nps >= np2+(npd*(divid/(ndiv*ndiv)))) {
-      continue;
+    x = (i%nps)-nps-(npd*(divid%ndiv));
+    y = ((i/nps)%nps)-nps-(npd*((divid/ndiv)%ndiv));
+    z = (i/(nps*nps))-nps-(npd*(divid/(ndiv*ndiv)));
+    for (j=0; j<3; j++) {
+      z2 = z+(nps*j)+nbuf;
+      if (z2<0 || z2>=np2) {
+        continue;
+      }
+      for (k=0; k<3; k++) {
+        y2 = y+(nps*k)+nbuf;
+        if (y2<0 || y2>=np2) {
+          continue;
+        }
+        for (l=0; l<3; l++) {
+          x2 = x+(nps*l)+nbuf;
+          if (x2<0 || x2>=np2) {
+            continue;
+          }
+          id = (np2*np2*z2)+(np2*y2)+x2;
+          (*p)[id][1] = ptemp[i];
+        }
+      }
     }
-    if ((((i/nps)%nps)+nbuf)%nps >= np2+(npd*((divid/ndiv)%ndiv))) {
-      continue;
-    }
-    if (((i%nps)+nbuf)%nps >= np2+(npd*(divid%ndiv))) {
-      continue;
-    }
-    if (((i/(nps*nps))+nbuf)%nps < npd*(divid/(ndiv*ndiv))) {
-      continue;
-    }
-    if ((((i/nps)%nps)+nbuf)%nps < npd*((divid/ndiv)%ndiv)) {
-      continue;
-    }
-    if (((i%nps)+nbuf)%nps < npd*(divid%ndiv)) {
-      continue;
-    }
-    (*p)[j][1] = ptemp[i];
-    ++j;
   }
+
   /*fread(&dum,1,4,pos);
     fread(&dum,1,4,pos); */
-  j = 0;
+
   fread(ptemp,np,4,pos);
   for (i=0; i<np; i++) {
-    if (((i/(nps*nps))+nbuf)%nps >= np2+(npd*(divid/(ndiv*ndiv)))) {
-      continue;
+    x = (i%nps)-nps-(npd*(divid%ndiv));
+    y = ((i/nps)%nps)-nps-(npd*((divid/ndiv)%ndiv));
+    z = (i/(nps*nps))-nps-(npd*(divid/(ndiv*ndiv)));
+    for (j=0; j<3; j++) {
+      z2 = z+(nps*j)+nbuf;
+      if (z2<0 || z2>=np2) {
+        continue;
+      }
+      for (k=0; k<3; k++) {
+        y2 = y+(nps*k)+nbuf;
+        if (y2<0 || y2>=np2) {
+          continue;
+        }
+        for (l=0; l<3; l++) {
+          x2 = x+(nps*l)+nbuf;
+          if (x2<0 || x2>=np2) {
+            continue;
+          }
+          id = (np2*np2*z2)+(np2*y2)+x2;
+          (*p)[id][2] = ptemp[i];
+        }
+      }
     }
-    if ((((i/nps)%nps)+nbuf)%nps >= np2+(npd*((divid/ndiv)%ndiv))) {
-      continue;
-    }
-    if (((i%nps)+nbuf)%nps >= np2+(npd*(divid%ndiv))) {
-      continue;
-    }
-    if (((i/(nps*nps))+nbuf)%nps < npd*(divid/(ndiv*ndiv))) {
-      continue;
-    }
-    if ((((i/nps)%nps)+nbuf)%nps < npd*((divid/ndiv)%ndiv)) {
-      continue;
-    }
-    if (((i%nps)+nbuf)%nps < npd*(divid%ndiv)) {
-      continue;
-    }
-    (*p)[j][2] = ptemp[i];
-    ++j;
   }
+
   /*fread(&dum,1,4,pos); */
 
   fclose(pos);
