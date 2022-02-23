@@ -1,28 +1,133 @@
 //-----------------------------------------------------------------------------
-// Copyright (c) 2014, Bridget L. Falck & Mark C. Neyrinck
+// Copyright (c) 2016, Bridget L. Falck, Mark C. Neyrinck, & Nuala McCullagh
 //
 // Distributed under the terms of the Modified BSD License.
 //
-// The full license is in the file COPYING.txt, distributed with this software.
+// The full license is in the file LICENSE, distributed with this software.
 //-----------------------------------------------------------------------------
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "params.h"
 
 #define DL for (d=0;d<3;d++) /* Dimension loop */
 #define BF 1e30
 
+/* Gadget variables: */
+struct io_header_1
+{
+  int      npart[6];
+  double   mass[6];
+  double   time;
+  double   redshift;
+  int      flag_sfr;
+  int      flag_feedback;
+  int      npartTotal[6];
+  int      flag_cooling;
+  int      num_files;
+  double   BoxSize;
+  double   Omega0;
+  double   OmegaLambda;
+  double   HubbleParam; 
+  char     fill[256- 6*4- 6*8- 2*8- 2*4- 6*4- 2*4 - 4*8];  /* fills to 256 Bytes */
+} header1;
+
+int     NumPart, Ngas;
+
+struct particle_data 
+{
+  float  Pos[3];
+  float  Vel[3];
+  float  Mass;
+  int    Type;
+
+  float  Rho, U, Temp, Ne;
+} *P;
+
+long long *Id;
+
+double  Time, Redshift;
+
+/* Global parameters */
+int maxline = 80;
+char *posfile;
+char *outdir;
+char *taglabel;
+float boxsize;
+int np1d;
+int nsplit;
+int numfiles;
+int nbuf;
+float buffer;
+int numdiv;
+float volcut;
+int npmin;
+char *halolabel;
+
+void read_parameters(char *filename) {
+
+  FILE *fd;
+  char inbuf[maxline];
+
+  posfile = (char *)malloc(maxline*sizeof(char));
+  outdir = (char *)malloc(maxline*sizeof(char));
+  taglabel = (char *)malloc(maxline*sizeof(char));
+  halolabel = (char *)malloc(maxline*sizeof(char));
+
+  fd = fopen(filename,"r");
+  if (fd == NULL) {
+    printf("Unable to open parameter file %s\n\n",filename);
+    exit(0);
+  }
+  printf("Reading parameter file %s\n",filename);
+
+  fgets(inbuf,maxline,fd);
+
+  fscanf(fd,"%s %s",inbuf,posfile);
+  fscanf(fd,"%s %s",inbuf,outdir);
+  fscanf(fd,"%s %s",inbuf,taglabel);
+  fscanf(fd,"%s %f",inbuf,&boxsize);
+  fscanf(fd,"%s %d",inbuf,&np1d);
+  fscanf(fd,"%s %d",inbuf,&nsplit);
+  fscanf(fd,"%s %d",inbuf,&numfiles);
+
+  fgets(inbuf,maxline,fd);
+  fgets(inbuf,maxline,fd);
+  fgets(inbuf,maxline,fd);
+
+  fscanf(fd,"%s %d",inbuf,&nbuf);
+
+  fgets(inbuf,maxline,fd);
+  fgets(inbuf,maxline,fd);
+  fgets(inbuf,maxline,fd);
+
+  fscanf(fd,"%s %f",inbuf,&buffer);
+  fscanf(fd,"%s %d",inbuf,&numdiv);
+
+  fgets(inbuf,maxline,fd);
+  fgets(inbuf,maxline,fd);
+  fgets(inbuf,maxline,fd);
+
+  fscanf(fd,"%s %f",inbuf,&volcut);
+  fscanf(fd,"%s %d",inbuf,&npmin);
+  fscanf(fd,"%s %s",inbuf,halolabel);
+
+  fclose(fd);
+
+
+}
+
+
 /* Positions */
 /* Returns number of particles read */
-int posread(char *posfile, float ***p, float fact, int nps, int npd, int ndiv, int divid, int nbuf) {
+int posread(char *posfile, float ***p, float fact) {
 
   FILE *pos;
-  int np,dum,d,i,j,k,l,np2,np3, x,y,z, x2,y2,z2, id;
-
+  int np,dum,d,i;
   float xmin,xmax,ymin,ymax,zmin,zmax;
   float *ptemp;
 
-  printf("fact=%f\n",fact);
+  //printf("fact=%f\n",fact);
   fflush(stdout);
 
   pos = fopen(posfile, "r");
@@ -37,132 +142,180 @@ int posread(char *posfile, float ***p, float fact, int nps, int npd, int ndiv, i
   /*fread(&dum,1,4,pos); */
   fread(&np,1, sizeof(int),pos); 
   /*fread(&dum,1,4,pos);*/
+
+  /* Allocate the arrays */
+  (*p) = (float **)malloc(np*sizeof(float *));
+  ptemp = (float *)malloc(np*sizeof(float));
+
+  //printf("np = %d\n",np);
+
+  fread(ptemp,np,4,pos);
+  for (i=0; i<np; i++) {
+    (*p)[i] = (float *)malloc(3*sizeof(float));
+    if ((*p)[i] == NULL) {
+      printf("Unable to allocate particle array in readfiles!\n");
+      fflush(stdout);
+      exit(0);
+    }
+    (*p)[i][0] = ptemp[i];
+  }
+  /*fread(&dum,1,4,pos); 
+    fread(&dum,1,4,pos); */
+  fread(ptemp,np,4,pos);
+  for (i=0; i<np; i++) (*p)[i][1] = ptemp[i];
+  /*fread(&dum,1,4,pos);
+    fread(&dum,1,4,pos); */
+  fread(ptemp,np,4,pos);
+  for (i=0; i<np; i++) (*p)[i][2] = ptemp[i];
+  /*fread(&dum,1,4,pos); */
+
+  fclose(pos);
+  free(ptemp);
+
+  /* Get into physical units */
+
+  for (i=0; i<np; i++) DL (*p)[i][d] *= fact;
+
+
+  /* Test range -- can comment out */
+  /*
+  xmin = BF; xmax = -BF; ymin = BF; ymax = -BF; zmin = BF; zmax = -BF;
+  for (i=0; i<np;i++) {
+    if ((*p)[i][0]<xmin) xmin = (*p)[i][0]; if ((*p)[i][0]>xmax) xmax = (*p)[i][0];
+    if ((*p)[i][1]<ymin) ymin = (*p)[i][1]; if ((*p)[i][1]>ymax) ymax = (*p)[i][1];
+    if ((*p)[i][2]<zmin) zmin = (*p)[i][2]; if ((*p)[i][2]>zmax) zmax = (*p)[i][2];
+  }
+  printf("np: %d, x: %f,%f; y: %f,%f; z: %f,%f\n",np,xmin,xmax, ymin,ymax, zmin,zmax); fflush(stdout);
+  */
+  return(np);
+}
+
+/* Positions in subdivision */
+/* Returns number of particles read */
+long divread(char *posfile, float ***p, float fact, float boxsize, int np1d, int npd, int ndiv, int divid, int nbuf) {
+
+  FILE *pos;
+  int dum,d, j,k,l,n, np2,np3,nd3, x,y,z, x2,y2,z2, id;
+  long np,i;
+  float xmin,xmax,ymin,ymax,zmin,zmax;
+  float *ptemp;
+
+  //printf("fact=%f\n",fact);
+  fflush(stdout);
+
+  pos = fopen(posfile, "r");
+  if (pos == NULL) {
+    printf("Unable to open position file %s\n\n",posfile);
+    exit(0);
+  }
+  /* Fortran77 4-byte headers and footers */
+  /* Delete "dum" statements if you don't need them */
+
+  /* Read number of particles */
+  /*fread(&dum,1,4,pos); */
+  fread(&np,1, sizeof(long),pos); 
+  /*fread(&dum,1,4,pos);*/
+
   np2 = npd+nbuf+nbuf;
   np3 = np2*np2*np2;
+  nd3 = ndiv*ndiv*ndiv;
 
   /* Allocate the arrays */
   (*p) = (float **)malloc(np3*sizeof(float *));
-  ptemp = (float *)malloc(np*sizeof(float));
+  ptemp = (float *)malloc((np/nd3)*sizeof(float));
 
-  printf("np = %d\n",np);
+  //printf("np = %d\n",np);
 
-  /*
-  j = 0;
-  for (i=0; i<np; i++) {
-    x = (i%nps)-nps-(npd*(divid%ndiv));
-    y = ((i/nps)%nps)-nps-(npd*((divid/ndiv)%ndiv));
-    z = (i/(nps*nps))-nps-(npd*(divid/(ndiv*ndiv)));
-    for (k=0; k<3; k++) {
-      z2 = z+(nps*k)+nbuf;
-      if (z2<0 || z2>=np2) {
-        continue;
-      }
-      for (l=0; l<3; l++) {
-	y2 = y+(nps*l)+nbuf;
-	if (y2<0 || y2>=np2) {
-	  continue;
-	}
-        for (m=0; m<3; m++) {
-          x2 = x+(nps*m)+nbuf;
-	  if (x2<0 || x2>=np2) {
-	    continue;
-	  }
-	  id = (np2*np2*z2)+(np2*y2)+x2;
-	  ++j;
-        }
-      }
-    }
-  }
-  */
-
-  fread(ptemp,np,4,pos);
-  for (i=0; i<np; i++) {
-    x = (i%nps)-nps-(npd*(divid%ndiv));
-    y = ((i/nps)%nps)-nps-(npd*((divid/ndiv)%ndiv));
-    z = (i/(nps*nps))-nps-(npd*(divid/(ndiv*ndiv)));
-    for (j=0; j<3; j++) {
-      z2 = z+(nps*j)+nbuf;
-      if (z2<0 || z2>=np2) {
-        continue;
-      }
-      for (k=0; k<3; k++) {
-        y2 = y+(nps*k)+nbuf;
-        if (y2<0 || y2>=np2) {
+  for (n=0; n<nd3; n++) {
+    fread(ptemp,np/nd3,4,pos);
+    for (i=(n*np)/nd3; i<((n+1)*np)/nd3; i++) {
+      x = (i%np1d)-np1d-(npd*(divid%ndiv));
+      y = ((i/np1d)%np1d)-np1d-(npd*((divid/ndiv)%ndiv));
+      z = (i/(np1d*np1d))-np1d-(npd*(divid/(ndiv*ndiv)));
+      for (j=0; j<3; j++) {
+        z2 = z+(np1d*j)+nbuf;
+        if (z2<0 || z2>=np2) {
           continue;
         }
-        for (l=0; l<3; l++) {
-          x2 = x+(nps*l)+nbuf;
-          if (x2<0 || x2>=np2) {
+        for (k=0; k<3; k++) {
+          y2 = y+(np1d*k)+nbuf;
+          if (y2<0 || y2>=np2) {
             continue;
           }
-          id = (np2*np2*z2)+(np2*y2)+x2;
-          (*p)[id] = (float *)malloc(3*sizeof(float));
-          if ((*p)[id] == NULL) {
-            printf("Unable to allocate particle array in readfiles!\n");
-            fflush(stdout);
-            exit(0);
+          for (l=0; l<3; l++) {
+            x2 = x+(np1d*l)+nbuf;
+            if (x2<0 || x2>=np2) {
+              continue;
+            }
+            id = (np2*np2*z2)+(np2*y2)+x2;
+            (*p)[id] = (float *)malloc(3*sizeof(float));
+            if ((*p)[id] == NULL) {
+              printf("Unable to allocate particle array in readfiles!\n");
+              fflush(stdout);
+              exit(0);
+            }
+            (*p)[id][0] = ptemp[i-((n*np)/nd3)]+(l-1)*boxsize;
           }
-          (*p)[id][0] = ptemp[i];
         }
       }
     }
   }
-
   /*fread(&dum,1,4,pos); 
     fread(&dum,1,4,pos); */
-
-  fread(ptemp,np,4,pos);
-  for (i=0; i<np; i++) {
-    x = (i%nps)-nps-(npd*(divid%ndiv));
-    y = ((i/nps)%nps)-nps-(npd*((divid/ndiv)%ndiv));
-    z = (i/(nps*nps))-nps-(npd*(divid/(ndiv*ndiv)));
-    for (j=0; j<3; j++) {
-      z2 = z+(nps*j)+nbuf;
-      if (z2<0 || z2>=np2) {
-        continue;
-      }
-      for (k=0; k<3; k++) {
-        y2 = y+(nps*k)+nbuf;
-        if (y2<0 || y2>=np2) {
+  for (n=0; n<nd3; n++){
+    fread(ptemp,np/nd3,4,pos);
+    for (i=(n*np)/nd3; i<((n+1)*np)/nd3; i++) {
+      x = (i%np1d)-np1d-(npd*(divid%ndiv));
+      y = ((i/np1d)%np1d)-np1d-(npd*((divid/ndiv)%ndiv));
+      z = (i/(np1d*np1d))-np1d-(npd*(divid/(ndiv*ndiv)));
+      for (j=0; j<3; j++) {
+        z2 = z+(np1d*j)+nbuf;
+        if (z2<0 || z2>=np2) {
           continue;
         }
-        for (l=0; l<3; l++) {
-          x2 = x+(nps*l)+nbuf;
-          if (x2<0 || x2>=np2) {
+        for (k=0; k<3; k++) {
+          y2 = y+(np1d*k)+nbuf;
+          if (y2<0 || y2>=np2) {
             continue;
           }
-          id = (np2*np2*z2)+(np2*y2)+x2;
-          (*p)[id][1] = ptemp[i];
+          for (l=0; l<3; l++) {
+            x2 = x+(np1d*l)+nbuf;
+            if (x2<0 || x2>=np2) {
+              continue;
+            }
+            id = (np2*np2*z2)+(np2*y2)+x2;
+            (*p)[id][1] = ptemp[i-((n*np)/nd3)]+(k-1)*boxsize;
+          }
         }
       }
     }
   }
-
   /*fread(&dum,1,4,pos);
     fread(&dum,1,4,pos); */
-
-  fread(ptemp,np,4,pos);
-  for (i=0; i<np; i++) {
-    x = (i%nps)-nps-(npd*(divid%ndiv));
-    y = ((i/nps)%nps)-nps-(npd*((divid/ndiv)%ndiv));
-    z = (i/(nps*nps))-nps-(npd*(divid/(ndiv*ndiv)));
-    for (j=0; j<3; j++) {
-      z2 = z+(nps*j)+nbuf;
-      if (z2<0 || z2>=np2) {
-        continue;
-      }
-      for (k=0; k<3; k++) {
-        y2 = y+(nps*k)+nbuf;
-        if (y2<0 || y2>=np2) {
+  for (n=0; n<nd3; n++) {
+    fread(ptemp,np,4,pos);
+    for (i=(n*np)/nd3; i<((n+1)*np)/nd3; i++) {
+      x = (i%np1d)-np1d-(npd*(divid%ndiv));
+      y = ((i/np1d)%np1d)-np1d-(npd*((divid/ndiv)%ndiv));
+      z = (i/(np1d*np1d))-np1d-(npd*(divid/(ndiv*ndiv)));
+      for (j=0; j<3; j++) {
+        z2 = z+(np1d*j)+nbuf;
+        if (z2<0 || z2>=np2) {
           continue;
         }
-        for (l=0; l<3; l++) {
-          x2 = x+(nps*l)+nbuf;
-          if (x2<0 || x2>=np2) {
+        for (k=0; k<3; k++) {
+          y2 = y+(np1d*k)+nbuf;
+          if (y2<0 || y2>=np2) {
             continue;
           }
-          id = (np2*np2*z2)+(np2*y2)+x2;
-          (*p)[id][2] = ptemp[i];
+          for (l=0; l<3; l++) {
+            x2 = x+(np1d*l)+nbuf;
+            if (x2<0 || x2>=np2) {
+              continue;
+            }
+            id = (np2*np2*z2)+(np2*y2)+x2;
+            (*p)[id][2] = ptemp[i-((n*np)/nd3)]+(j-1)*boxsize;
+          }
         }
       }
     }
@@ -173,12 +326,13 @@ int posread(char *posfile, float ***p, float fact, int nps, int npd, int ndiv, i
   fclose(pos);
   free(ptemp);
 
-  /* Get into physical units (Mpc/h) */
+  /* Get into physical units */
 
   for (i=0; i<np3; i++) DL (*p)[i][d] *= fact;
 
 
   /* Test range -- can comment out */
+  /*
   xmin = BF; xmax = -BF; ymin = BF; ymax = -BF; zmin = BF; zmax = -BF;
   for (i=0; i<np3;i++) {
     if ((*p)[i][0]<xmin) xmin = (*p)[i][0]; if ((*p)[i][0]>xmax) xmax = (*p)[i][0];
@@ -186,7 +340,7 @@ int posread(char *posfile, float ***p, float fact, int nps, int npd, int ndiv, i
     if ((*p)[i][2]<zmin) zmin = (*p)[i][2]; if ((*p)[i][2]>zmax) zmax = (*p)[i][2];
   }
   printf("np: %d, x: %f,%f; y: %f,%f; z: %f,%f\n",np,xmin,xmax, ymin,ymax, zmin,zmax); fflush(stdout);
-
+  */
   return(np);
 }
 
@@ -242,10 +396,11 @@ int velread(char *velfile, float ***v, float fact) {
 
   /* Convert from code units into physical units (km/sec) */
   
-  printf("np=%d\n",np); fflush(stdout);
+  //printf("np=%d\n",np); fflush(stdout);
   for (i=0; i<np; i++) DL (*v)[i][d] *= fact;
 
   /* Test range -- can comment out */
+  /*
   xmin = BF; xmax = -BF; ymin = BF; ymax = -BF; zmin = BF; zmax = -BF;
   for (i=0; i<np;i++) {
     if ((*v)[i][0] < xmin) xmin = (*v)[i][0]; if ((*v)[i][0] > xmax) xmax = (*v)[i][0];
@@ -253,5 +408,278 @@ int velread(char *velfile, float ***v, float fact) {
     if ((*v)[i][2] < zmin) zmin = (*v)[i][2]; if ((*v)[i][2] > zmax) zmax = (*v)[i][2];
   }
   printf("vx: %f,%f; vy: %f,%f; vz: %f,%f\n",xmin,xmax, ymin,ymax, zmin,zmax);fflush(stdout);
+  */
   return(np);
 }
+
+
+int readgadget(char *filename, float ***pos) {
+
+  int i,d;
+
+  load_snapshot(filename,numfiles);
+  printf("NumPart = %d\n",NumPart);
+
+  reordering();  /* call this routine only if your IDs are set properly */
+
+  // Define p from *P:
+
+  /* Allocate the arrays */
+  (*pos) = (float **)malloc(NumPart*sizeof(float *));
+//  printf("Allocated memory for pos in readgadget\n");
+
+  for (i=0; i<NumPart; i++) {
+    (*pos)[i] = (float *)malloc(3*sizeof(float));
+    if ((*pos)[i] == NULL) {
+      printf("Unable to allocate particle array in readfiles!\n");
+      fflush(stdout);
+      exit(0);
+    }
+  }
+  printf("Allocated memory for pos in readgadget\n");
+
+  P++; /* start with offset 0 */
+  for (i=0; i<NumPart; i++) {
+    (*pos)[i] = P[i].Pos;
+  }
+
+
+  return(NumPart);
+
+}
+
+
+
+/* (From Volker Springel's Gadget snapshot reader)
+ * this routine loads particle data from Gadget's default
+ * binary file format. (A snapshot may be distributed
+ * into multiple files.)
+ */
+int load_snapshot(char *fname, int files)
+{
+  FILE *fd;
+  char   buf[200];
+  int    i,j,k,dummy,ntot_withmasses;
+  int    t,n,off,pc,pc_new,pc_sph;
+
+#define SKIP fread(&dummy, sizeof(dummy), 1, fd);
+
+  for(i=0, pc=1; i<files; i++, pc=pc_new)
+    {
+      if(files>1)
+	sprintf(buf,"%s.%d",fname,i);
+      else
+	sprintf(buf,"%s",fname);
+
+      if(!(fd=fopen(buf,"r")))
+	{
+	  printf("can't open file `%s`\n",buf);
+	  exit(0);
+	}
+
+      printf("reading `%s' ...\n",buf); fflush(stdout);
+
+      fread(&dummy, sizeof(dummy), 1, fd);
+      fread(&header1, sizeof(header1), 1, fd);
+      fread(&dummy, sizeof(dummy), 1, fd);
+
+      if(files==1)
+	{
+	  for(k=0, NumPart=0, ntot_withmasses=0; k<5; k++)
+	    NumPart+= header1.npart[k];
+	  Ngas= header1.npart[0];
+	}
+      else
+	{
+	  for(k=0, NumPart=0, ntot_withmasses=0; k<5; k++)
+	    NumPart+= header1.npartTotal[k];
+	  Ngas= header1.npartTotal[0];
+	}
+
+      for(k=0, ntot_withmasses=0; k<5; k++)
+	{
+	  if(header1.mass[k]==0)
+	    ntot_withmasses+= header1.npart[k];
+	}
+
+      if(i==0)
+	allocate_memory();
+
+      SKIP;
+      for(k=0,pc_new=pc;k<6;k++)
+	{
+	  for(n=0;n<header1.npart[k];n++)
+	    {
+	      fread(&P[pc_new].Pos[0], sizeof(float), 3, fd);
+	      pc_new++;
+	    }
+	}
+      SKIP;
+
+      SKIP;
+      for(k=0,pc_new=pc;k<6;k++)
+	{
+	  for(n=0;n<header1.npart[k];n++)
+	    {
+	      fread(&P[pc_new].Vel[0], sizeof(float), 3, fd);
+	      pc_new++;
+	    }
+	}
+      SKIP;
+    
+
+      SKIP;
+      for(k=0,pc_new=pc;k<6;k++)
+	{
+	  for(n=0;n<header1.npart[k];n++)
+	    {
+	      fread(&Id[pc_new], sizeof(long long), 1, fd);
+	      pc_new++;
+	    }
+	}
+      SKIP;
+
+
+      if(ntot_withmasses>0)
+	SKIP;
+      for(k=0, pc_new=pc; k<6; k++)
+	{
+	  for(n=0;n<header1.npart[k];n++)
+	    {
+	      P[pc_new].Type=k;
+
+	      if(header1.mass[k]==0)
+		fread(&P[pc_new].Mass, sizeof(float), 1, fd);
+	      else
+		P[pc_new].Mass= header1.mass[k];
+	      pc_new++;
+	    }
+	}
+      if(ntot_withmasses>0)
+	SKIP;
+      
+
+      if(header1.npart[0]>0)
+	{
+	  SKIP;
+	  for(n=0, pc_sph=pc; n<header1.npart[0];n++)
+	    {
+	      fread(&P[pc_sph].U, sizeof(float), 1, fd);
+	      pc_sph++;
+	    }
+	  SKIP;
+
+	  SKIP;
+	  for(n=0, pc_sph=pc; n<header1.npart[0];n++)
+	    {
+	      fread(&P[pc_sph].Rho, sizeof(float), 1, fd);
+	      pc_sph++;
+	    }
+	  SKIP;
+
+	  if(header1.flag_cooling)
+	    {
+	      SKIP;
+	      for(n=0, pc_sph=pc; n<header1.npart[0];n++)
+		{
+		  fread(&P[pc_sph].Ne, sizeof(float), 1, fd);
+		  pc_sph++;
+		}
+	      SKIP;
+	    }
+	  else
+	    for(n=0, pc_sph=pc; n<header1.npart[0];n++)
+	      {
+		P[pc_sph].Ne= 1.0;
+		pc_sph++;
+	      }
+	}
+
+      fclose(fd);
+    }
+
+  Time= header1.time;
+  Redshift= header1.time;
+}
+
+/* (From Volker Springel's Gadget snapshot reader)
+ * this routine allocates the memory for the 
+ * particle data.
+ */
+int allocate_memory(void)
+{
+  printf("allocating memory...\n");
+
+  if(!(P=malloc(NumPart*sizeof(struct particle_data))))
+    {
+      fprintf(stderr,"failed to allocate memory.\n");
+      exit(0);
+    }
+  
+  P--;   /* start with offset 1 */
+
+  
+  if(!(Id=malloc(NumPart*sizeof(long long))))
+    {
+      fprintf(stderr,"failed to allocate memory.\n");
+      exit(0);
+    }
+  
+  Id--;   /* start with offset 1 */
+
+  printf("allocating memory...done\n");
+}
+
+/* (From Volker Springel's Gadget snapshot reader)
+ * This routine brings the particles back into
+ * the order of their ID's.
+ * NOTE: The routine only works if the ID's cover
+ * the range from 1 to NumPart !
+ * In other cases, one has to use more general
+ * sorting routines.
+ */
+int reordering(void)
+{
+  int i,j;
+  int idsource, idsave, dest;
+  struct particle_data psave, psource;
+
+
+  printf("reordering....\n");
+
+  for(i=1; i<=NumPart; i++)
+    {
+      if(Id[i] != i)
+	{
+	  psource= P[i];
+	  idsource=Id[i];
+	  dest=Id[i];
+
+	  do
+	    {
+	      psave= P[dest];
+	      idsave=Id[dest];
+
+	      P[dest]= psource;
+	      Id[dest]= idsource;
+	      
+	      if(dest == i) 
+		break;
+
+	      psource= psave;
+	      idsource=idsave;
+
+	      dest=idsource;
+	    }
+	  while(1);
+	}
+    }
+
+  printf("done.\n");
+
+  Id++;   
+  free(Id);
+
+  printf("space for particle ID freed\n");
+}
+

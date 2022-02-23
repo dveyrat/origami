@@ -22,13 +22,13 @@ int par(int i, int j, int k, int ng) {
 }
 
 void read_parameters(char *filename);
-int posread(char *filename, float ***p, float fact);
+long divread(char *filename, float ***p, float fact, float boxsize, int np1d, int npd, int ndiv, int divid, int nbuf);
 int readgadget(char *filename, float ***p);
 
 
 int main(int argc, char *argv[]) {
     int exitcode;
-    int np;
+    long np;
     float **r;
 
     FILE *pos, *tag;
@@ -37,8 +37,8 @@ int main(int argc, char *argv[]) {
   
     int s;
     float negb2,b2;
-    int ng2,ng4, h, i,i2, x,y,z,nhalo,nhalo0,nhalo1,nhalo2,nhaloany;
-    unsigned char *m,*m0,*m1,*m2, mn,m0n,m1n,m2n; /*Morphology tag */
+    int ng2,ng4, np2,np3, h, i,i2, j, x,y,z,nhalo,nhalo0,nhalo1,nhalo2,nhaloany, ndiv,divid,npd;
+    unsigned char *m,*m0,*m1,*m2,*M, mn,m0n,m1n,m2n; /*Morphology tag */
     int zstart, ystart, xstart, zend, yend, xend;
     float dx,d1,d2;
 
@@ -48,25 +48,43 @@ int main(int argc, char *argv[]) {
     } else paramfile = argv[1];
     read_parameters(paramfile);
 
+    if (sscanf(argv[2],"%d",&ndiv) != 1) {
+        printf("That's no ndiv; try again.\n");
+        exit(0);
+    }
+    if (sscanf(argv[3],"%d",&divid) != 1) {
+        printf("That's no divid; try again.\n");
+        exit(0);
+    }
+    if (np1d%ndiv != 0) {
+        printf("ndiv must be factor of np1d.\n");
+	exit(0);
+    }
+    npd = np1d/ndiv;
+
     b2 = boxsize/2.;
     negb2 = -boxsize/2.;
 
-    sprintf(tagoutfile,"%s%stag.dat",outdir,taglabel);
+    sprintf(tagoutfile,"%s%s_%dtag.dat",outdir,taglabel,divid);
 
-    ng2=np1d/2;
-    ng4=np1d/4;
+    np2 = npd+nbuf+nbuf;
+    np3 = np2*np2*np2;
+
+    ng2=nbuf*2;
+    ng4=nbuf;
 
     if (numfiles > 0) {
       np = readgadget(posfile,&r);
-    } else np = posread(posfile,&r,1.);
+    } else np = divread(posfile,&r,1.,boxsize,np1d,npd,ndiv,divid,nbuf);
     printf("%d particles\n",np);fflush(stdout);
 
     xmin = BF; xmax = -BF; ymin = BF; ymax = -BF; zmin = BF; zmax = -BF;
-    m = (unsigned char *)malloc(np*sizeof(unsigned char));
-    m0 = (unsigned char *)malloc(np*sizeof(unsigned char)); /* for the diagonals */
-    m1 = (unsigned char *)malloc(np*sizeof(unsigned char));
-    m2 = (unsigned char *)malloc(np*sizeof(unsigned char));
-    for (i=0; i<np;i++) {
+    m = (unsigned char *)malloc(np3*sizeof(unsigned char));
+    m0 = (unsigned char *)malloc(np3*sizeof(unsigned char)); /* for the diagonals */
+    m1 = (unsigned char *)malloc(np3*sizeof(unsigned char));
+    m2 = (unsigned char *)malloc(np3*sizeof(unsigned char));
+    M = (unsigned char *)malloc(npd*npd*npd*sizeof(unsigned char));
+    for (i=0; i<np3;i++) {
         if (r[i][0]<xmin) xmin = r[i][0]; if (r[i][0]>xmax) xmax = r[i][0];
         if (r[i][1]<ymin) ymin = r[i][1]; if (r[i][1]>ymax) ymax = r[i][1];
         if (r[i][2]<zmin) zmin = r[i][2]; if (r[i][2]>zmax) zmax = r[i][2];
@@ -75,6 +93,10 @@ int main(int argc, char *argv[]) {
         m0[i] = 1;
         m1[i] = 1;
         m2[i] = 1;
+
+	if (i<(npd*npd*npd)) {
+	    M[i] = 1;
+	}
     }
 
     if (m==NULL) {
@@ -235,7 +257,8 @@ int main(int argc, char *argv[]) {
     nhalo1 = 0;
     nhalo2 = 0;
     nhaloany = 0;
-    for (i=0;i<np;i++){
+    j = 0;
+    for (i=0;i<np3;i++){
         mn = (m[i]%2 == 0) + (m[i]%3 == 0) + (m[i]%5 == 0);
         m0n = (unsigned char)(m[i]%2 == 0) + (unsigned char)(m0[i]%2 == 0) + (unsigned char)(m0[i]%3 == 0);
         m1n = (unsigned char)(m[i]%3 == 0) + (unsigned char)(m1[i]%2 == 0) + (unsigned char)(m1[i]%3 == 0);
@@ -248,6 +271,20 @@ int main(int argc, char *argv[]) {
         if (m[i] == 3) {
             nhaloany++;
         }
+	x = (i%np2)-nbuf;
+	if (x < 0 || x >= npd) {
+	    continue;
+	}
+	y = ((i/np2)%np2)-nbuf;
+	if (y < 0 || y >= npd) {
+	    continue;
+	}
+	z = (i/(np2*np2))-nbuf;
+	if (z < 0 || z >= npd) {
+	    continue;
+	}
+	M[j] = m[i];
+	++j;
     }
     printf("nhalo=%d,%d,%d,%d,%d\n",nhalo,nhalo0,nhalo1,nhalo2,nhaloany);
 
@@ -259,7 +296,7 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
     fwrite(&np,1, sizeof(int),tag);
-    fwrite(m,np,sizeof(unsigned char),tag);
+    fwrite(M,npd*npd*npd,sizeof(unsigned char),tag);
 
     return(1);
 }
