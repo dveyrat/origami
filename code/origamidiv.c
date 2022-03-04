@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
     b2 = boxsize/2.;
     negb2 = -boxsize/2.;
 
-    sprintf(tagoutfile,"%s%s_%dtag.dat",outdir,taglabel,divid);
+    sprintf(tagoutfile,"%s%s_tag_%d.dat",outdir,taglabel,divid);
 
     np2 = npd+nbuf+nbuf;
     np3 = np2*np2*np2;
@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
     if (numfiles > 0) {
       np = readgadget(posfile,&r);
     } else np = divread(posfile,&r,1.,boxsize,np1d,npd,ndiv,divid,nbuf);
-    printf("%d particles\n",np);fflush(stdout);
+    printf("%ld particles\n",np);fflush(stdout);
 
     xmin = BF; xmax = -BF; ymin = BF; ymax = -BF; zmin = BF; zmax = -BF;
     m = (unsigned char *)malloc(np3*sizeof(unsigned char));
@@ -105,7 +105,7 @@ int main(int argc, char *argv[]) {
     }
     //  printf("np: %d, x: %f,%f; y: %f,%f; z: %f,%f\n",np,xmin,xmax, ymin,ymax, zmin,zmax); fflush(stdout);
     printf("Calculating ORIGAMI morphology.\n");
-#pragma omp parallel for default(none) shared(np1d, ng4, r, boxsize, negb2, b2, m, m0, m1, m2, nsplit) private (x, y, z, h, dx, i, i2, d1, d2, xstart, xend, ystart, yend, zstart, zend)
+#pragma omp parallel for default(none) shared(np1d, np2, ng4, r, boxsize, negb2, b2, m, m0, m1, m2, nsplit) private (x, y, z, h, dx, i, i2, d1, d2, xstart, xend, ystart, yend, zstart, zend)
     for (s = 0; s < nsplit*nsplit*nsplit; s++) {
         zstart = s / (nsplit*nsplit);
         zend = zstart + 1;
@@ -113,25 +113,26 @@ int main(int argc, char *argv[]) {
         yend = ystart + 1;
         xstart = (s - zstart * nsplit * nsplit - ystart * nsplit);
         xend = xstart + 1;
-        
-        zstart *= (np1d/nsplit);
-        ystart *= (np1d/nsplit);
-        xstart *= (np1d/nsplit);
-        zend *= (np1d/nsplit);
-        yend *= (np1d/nsplit);
-        xend *= (np1d/nsplit);
+        printf("%d\n",xend);
+        zstart *= (np2/nsplit);
+        ystart *= (np2/nsplit);
+        xstart *= (np2/nsplit);
+        zend *= (np2/nsplit);
+        yend *= (np2/nsplit);
+        xend *= (np2/nsplit);
+	printf("%d\n",xend);
         for (x=xstart; x<xend; x++){
             //    printf("%d\n",x);fflush(stdout);
             for (y=ystart; y<yend; y++) {
                 for (z=zstart; z<zend; z++) {
-                    i = par(x,y,z,np1d);
+                    i = par(x,y,z,np2);
                     /* First just along the Cartesian axes */
                     /* x-direction */
                     for (h=1; abs(h)<ng4; h = -h + isneg(h)) {
-                        i2 = par(goodmod(x+h,np1d),y,z,np1d);
+                        i2 = par(goodmod(x+h,np2),y,z,np2);
                         dx = r[i2][0]-r[i][0];
-                        if (dx < negb2) dx += boxsize;
-                        if (dx > b2) dx -= boxsize;
+                        while (dx < negb2) dx += boxsize;
+                        while (dx > b2) dx -= boxsize;
                         if (dx*h < 0.) {
                             if (m[i] % 2 > 0) {
                                 m[i] *= 2;
@@ -140,10 +141,10 @@ int main(int argc, char *argv[]) {
                         }
                     }
                     for (h=1; abs(h)<ng4; h = -h + isneg(h)) {
-                        i2 = par(x,goodmod(y+h, np1d),z,np1d);
+                        i2 = par(x,goodmod(y+h, np2),z,np2);
                         dx = r[i2][1]-r[i][1];
-                        if (dx < negb2) dx += boxsize;
-                        if (dx > b2) dx -= boxsize;
+                        while (dx < negb2) dx += boxsize;
+                        while (dx > b2) dx -= boxsize;
                         if (dx*h < 0.) {
                             /*printf("y:%d %d %d %d %f\n",x,y,z,h,dx);*/
                             if (m[i] % 3 > 0) {
@@ -153,10 +154,10 @@ int main(int argc, char *argv[]) {
                         }
                     }
                     for (h=1; abs(h)<ng4; h = -h + isneg(h)) {
-                        i2 = par(x,y,goodmod(z+h, np1d),np1d);
+                        i2 = par(x,y,goodmod(z+h, np2),np2);
                         dx = r[i2][2]-r[i][2];
-                        if (dx < negb2) dx += boxsize;
-                        if (dx > b2) dx -= boxsize;
+                        while (dx < negb2) dx += boxsize;
+                        while (dx > b2) dx -= boxsize;
                         if (dx*h < 0.) {
                             /*printf("z:%d %d %d %d %f\n",x,y,z,h,dx);*/
                             if (m[i] % 5 > 0) {
@@ -167,26 +168,26 @@ int main(int argc, char *argv[]) {
                     }
                     // Now do diagonal directions 
                     for (h=1; h<ng4; h = -h + isneg(h)) {
-                        i2 = par(x,goodmod(y+h,np1d),goodmod(z+h,np1d),np1d);
+                        i2 = par(x,goodmod(y+h,np2),goodmod(z+h,np2),np2);
                         d1 = r[i2][1]-r[i][1];
                         d2 = r[i2][2]-r[i][2];
-                        if (d1 < negb2) d1 += boxsize;
-                        if (d1 > b2) d1 -= boxsize;
-                        if (d2 < negb2) d2 += boxsize;
-                        if (d2 > b2) d2 -= boxsize;
+                        while (d1 < negb2) d1 += boxsize;
+                        while (d1 > b2) d1 -= boxsize;
+                        while (d2 < negb2) d2 += boxsize;
+                        while (d2 > b2) d2 -= boxsize;
                         if ((d1 + d2)*h < 0.) {
                             m0[i] *= 2;
                             break;
                         }
                     }
                     for (h=1; h<ng4; h = -h + isneg(h)) {
-                        i2 = par(x,goodmod(y+h,np1d),goodmod(z-h,np1d),np1d);
+                        i2 = par(x,goodmod(y+h,np2),goodmod(z-h,np2),np2);
                         d1 = r[i2][1]-r[i][1];
                         d2 = r[i2][2]-r[i][2];
-                        if (d1 < negb2) d1 += boxsize;
-                        if (d1 > b2) d1 -= boxsize;
-                        if (d2 < negb2) d2 += boxsize;
-                        if (d2 > b2) d2 -= boxsize;
+                        while (d1 < negb2) d1 += boxsize;
+                        while (d1 > b2) d1 -= boxsize;
+                        while (d2 < negb2) d2 += boxsize;
+                        while (d2 > b2) d2 -= boxsize;
                         if ((d1 - d2)*h < 0.) {
                             m0[i] *= 3;
                             break;
@@ -194,26 +195,26 @@ int main(int argc, char *argv[]) {
                     }
                     // y
                     for (h=1; h<ng4; h = -h + isneg(h)) {
-                        i2 = par(goodmod(x+h,np1d),y,goodmod(z+h,np1d),np1d);
+                        i2 = par(goodmod(x+h,np2),y,goodmod(z+h,np2),np2);
                         d1 = r[i2][0]-r[i][0];
                         d2 = r[i2][2]-r[i][2];
-                        if (d1 < negb2) d1 += boxsize;
-                        if (d1 > b2) d1 -= boxsize;
-                        if (d2 < negb2) d2 += boxsize;
-                        if (d2 > b2) d2 -= boxsize;
+                        while (d1 < negb2) d1 += boxsize;
+                        while (d1 > b2) d1 -= boxsize;
+                        while (d2 < negb2) d2 += boxsize;
+                        while (d2 > b2) d2 -= boxsize;
                         if ((d1 + d2)*h < 0.) {
                             m1[i] *= 2;
                             break;
                         }
                     }
                     for (h=1; h<ng4; h = -h + isneg(h)) {
-                        i2 = par(goodmod(x+h,np1d),y,goodmod(z-h,np1d),np1d);
+                        i2 = par(goodmod(x+h,np2),y,goodmod(z-h,np2),np2);
                         d1 = r[i2][0]-r[i][0];
                         d2 = r[i2][2]-r[i][2];
-                        if (d1 < negb2) d1 += boxsize;
-                        if (d1 > b2) d1 -= boxsize;
-                        if (d2 < negb2) d2 += boxsize;
-                        if (d2 > b2) d2 -= boxsize;
+                        while (d1 < negb2) d1 += boxsize;
+                        while (d1 > b2) d1 -= boxsize;
+                        while (d2 < negb2) d2 += boxsize;
+                        while (d2 > b2) d2 -= boxsize;
                         if ((d1 - d2)*h < 0.) {
                             m1[i] *= 3;
                             break;
@@ -221,26 +222,26 @@ int main(int argc, char *argv[]) {
                     }
                     // z
                     for (h=1; h<ng4; h = -h + isneg(h)) {
-                        i2 = par(goodmod(x+h,np1d),goodmod(y+h,np1d),z,np1d);
+                        i2 = par(goodmod(x+h,np2),goodmod(y+h,np2),z,np2);
                         d1 = r[i2][0]-r[i][0];
                         d2 = r[i2][1]-r[i][1];
-                        if (d1 < negb2) d1 += boxsize;
-                        if (d1 > b2) d1 -= boxsize;
-                        if (d2 < negb2) d2 += boxsize;
-                        if (d2 > b2) d2 -= boxsize;
+                        while (d1 < negb2) d1 += boxsize;
+                        while (d1 > b2) d1 -= boxsize;
+                        while (d2 < negb2) d2 += boxsize;
+                        while (d2 > b2) d2 -= boxsize;
                         if ((d1 + d2)*h < 0.) {
                             m2[i] *=2;
                             break;
                         }
                     }
                     for (h=1; h<ng4; h = -h + isneg(h)) {
-                        i2 = par(goodmod(x+h,np1d),goodmod(y-h,np1d),z,np1d);
+                        i2 = par(goodmod(x+h,np2),goodmod(y-h,np2),z,np2);
                         d1 = r[i2][0]-r[i][0];
                         d2 = r[i2][1]-r[i][1];
-                        if (d1 < negb2) d1 += boxsize;
-                        if (d1 > b2) d1 -= boxsize;
-                        if (d2 < negb2) d2 += boxsize;
-                        if (d2 > b2) d2 -= boxsize;
+                        while (d1 < negb2) d1 += boxsize;
+                        while (d1 > b2) d1 -= boxsize;
+                        while (d2 < negb2) d2 += boxsize;
+                        while (d2 > b2) d2 -= boxsize;
                         if ((d1 - d2)*h < 0.) {
                             m2[i] *= 3;
                             break;
@@ -295,7 +296,7 @@ int main(int argc, char *argv[]) {
         printf("Unable to open %s\n",tagoutfile);
         exit(0);
     }
-    fwrite(&np,1, sizeof(int),tag);
+    //fwrite(&np,1, sizeof(int),tag);
     fwrite(M,npd*npd*npd,sizeof(unsigned char),tag);
 
     return(1);

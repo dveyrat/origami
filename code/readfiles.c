@@ -293,7 +293,7 @@ long divread(char *posfile, float ***p, float fact, float boxsize, int np1d, int
   /*fread(&dum,1,4,pos);
     fread(&dum,1,4,pos); */
   for (n=0; n<nd3; n++) {
-    fread(ptemp,np,4,pos);
+    fread(ptemp,np/nd3,4,pos);
     for (i=(n*np)/nd3; i<((n+1)*np)/nd3; i++) {
       x = (i%np1d)-np1d-(npd*(divid%ndiv));
       y = ((i/np1d)%np1d)-np1d-(npd*((divid/ndiv)%ndiv));
